@@ -80,20 +80,50 @@ if page == "Bidder List":
     offset = (page_no - 1) * limit
 
     @st.cache_data(ttl=300)
-    def load_bidders(limit, offset, username, role):
+    def load_bidders(limit, offset, username, role, filters=None):
         with engine.connect() as conn:
+            conditions = []
+            params = {"limit": limit, "offset": offset}
+
+            if filters:
+                if filters.get("bidder_name"):
+                    conditions.append("b.bidder_name ILIKE :bidder_name")
+                    params["bidder_name"] = f"%{filters['bidder_name']}%"
+                if filters.get("bidder_country"):
+                    conditions.append("t.bidder_country = :bidder_country")
+                    params["bidder_country"] = filters["bidder_country"]
+                if filters.get("tender_year") is not None:
+                    conditions.append("t.tender_year = :tender_year")
+                    params["tender_year"] = filters["tender_year"]
+
+            where_sql = ""
+            if conditions:
+                where_sql = "AND " + " AND ".join(conditions)
+
             if role == "admin":
-                query = f"SELECT bidder_name FROM {BIDDER_TABLE} ORDER BY bidder_name LIMIT :limit OFFSET :offset"
-                return pd.read_sql(text(query), conn, params={"limit": limit, "offset": offset})
+                query = f"""
+                    SELECT DISTINCT b.bidder_name
+                    FROM {BIDDER_TABLE} b
+                    LEFT JOIN {TENDER_TABLE} t ON b.bidder_name = t.bidder_name
+                    WHERE 1=1 {where_sql}
+                    ORDER BY b.bidder_name
+                    LIMIT :limit OFFSET :offset
+                """
             else:
                 query = f"""
-                    SELECT bidder_name FROM {BIDDER_TABLE}
-                    WHERE bidder_name IN (
+                    SELECT DISTINCT b.bidder_name
+                    FROM {BIDDER_TABLE} b
+                    LEFT JOIN {TENDER_TABLE} t ON b.bidder_name = t.bidder_name
+                    WHERE b.bidder_name IN (
                         SELECT bidder_name FROM user_bidders WHERE username = :username
                     )
-                    ORDER BY bidder_name LIMIT :limit OFFSET :offset
+                    {where_sql}
+                    ORDER BY b.bidder_name
+                    LIMIT :limit OFFSET :offset
                 """
-                return pd.read_sql(text(query), conn, params={"username": username, "limit": limit, "offset": offset})
+                params["username"] = username
+
+            return pd.read_sql(text(query), conn, params=params)
 
     @st.cache_data(ttl=300)
     def load_tender_details(bidder):
@@ -119,7 +149,14 @@ if page == "Bidder List":
             df.columns = [col.replace("_", " ").title() for col in df.columns]
             return df
 
-    bidder_df = load_bidders(limit, offset, st.session_state["username"], st.session_state["role"])
+    # 🔍 Filtre alanları
+    filters = {}
+    filters["bidder_name"] = st.text_input("Search Bidder")
+    filters["bidder_country"] = st.text_input("Filter by Country")
+    year_input = st.text_input("Filter by Year")  # boş bırakılabilir
+    filters["tender_year"] = int(year_input) if year_input.isdigit() else None
+
+    bidder_df = load_bidders(limit, offset, st.session_state["username"], st.session_state["role"], filters)
     selected_bidder = st.session_state.get("selected_bidder", None)
 
     for bidder in bidder_df["bidder_name"]:
@@ -197,7 +234,6 @@ else:
             else:
                 df = pd.read_sql(text(sql), conn)
 
-        # Format column names
         df.columns = [col.replace("_", " ").title() for col in df.columns]
 
         if analysis_type == "Country Comparison (Buyer Country)":
