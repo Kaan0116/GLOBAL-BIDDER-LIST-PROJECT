@@ -19,7 +19,7 @@
    createdb -U postgres tedarik
    ```
 3) Download the SQL dump from Google Drive:  
-   **[Download dump.sql](PASTE_YOUR_GOOGLE_DRIVE_LINK_HERE)**  
+   **[Download dump.sql](https://drive.google.com/file/d/1jbaad_6tCmJB43dWsWf32UBKNNNrE88R/view?usp=sharing)**  
 4) Import the dump file into PostgreSQL:
    ```bash
    psql -U postgres -d tedarik -f dump.sql
