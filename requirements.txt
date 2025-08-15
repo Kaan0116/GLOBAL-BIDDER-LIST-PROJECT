@@ -1,0 +1,7 @@
+streamlit
+sqlalchemy>=2
+psycopg2-binary
+pandas
+python-dotenv
+plotly
+bcrypt
